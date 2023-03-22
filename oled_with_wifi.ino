@@ -23,20 +23,22 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 19800;
 const int   daylightOffset_sec = 0;
+
+
 // WiFi credentials
-const char* ssid = "net";         // change SSID
-const char* password = "1234567888";    // change password
+const char* ssid = "PTCL-BB";         // change SSID
+const char* password = "bluewhale";    // change password
+
+
 // Google script ID and required credentials
-String GOOGLE_SCRIPT_ID = "AKfycbzMwU7e9YoQ7RSetsPTih1OPygcrTIWAT7OuGO6zhONaQPngeFc77NdJd-04SFQ1mtbSw";    // change Gscript ID
+String GOOGLE_SCRIPT_ID = "AKfycbzzwd7MMQ0GEQtSRoJiAH0Sk4ocJ5QHArJtGhb1dB44JPIJA8cZq8kJBIHXeDWAZbJ4";    // change Gscript ID
 int count = 0;
-
-
 
 
 void setup() {
   delay(1000);
   Serial.begin(9600);
-  delay(1000);
+  //delay(1000);
   // connect to WiFi
   Serial.println();
   Serial.print("Connecting to wifi: ");
@@ -52,16 +54,24 @@ void setup() {
   delay(500);
   Serial.println("CCS811 test");
 
-  if(!ccs2.begin(0x5A)){
-Serial.println("Failed to start sensor! Please check your wiring.");
+
+//check if sensors are turned on or not
+//sensor 2 = 0x5B
+//sensor 1 = 0x5A
+
+
+  if(!ccs.begin(0x5A)){
+Serial.println("Failed to start sensor 1! Please check your wiring.");
+}
+  if(!ccs2.begin(0x5B)){
+Serial.println("Failed to start sensor 2! Please check your wiring.");
 }
 
-  if(!ccs.begin(0x5B)){
-Serial.println("Failed to start sensor! Please check your wiring.");
-}
+delay(100);
+//initialize sensors:
+  ccs.begin(0x5A);
+  ccs2.begin(0x5B);
 
-  ccs2.begin(0x5A);
-  ccs.begin(0x5B);
   //calibrate temperature sensor
   // initialize the OLED object
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
@@ -70,15 +80,16 @@ Serial.println("Failed to start sensor! Please check your wiring.");
       ;  // Don't proceed, loop forever
   }
 
+
+
   // Clear the buffer.
   display.clearDisplay();
-
   display.setTextColor(WHITE);
   display.setCursor(0, 24);
   display.setTextSize(2);
   display.println("C - CARGO");
   display.display();
-  delay(2000);
+  delay(500);
   display.clearDisplay();
 
 
@@ -86,7 +97,7 @@ Serial.println("Failed to start sensor! Please check your wiring.");
   display.setCursor(0, 28);
   display.println("CO2 Sequestration \nMonitor");
   display.display();
-  delay(2000);
+  delay(500);
   display.clearDisplay();
 
   display.setCursor(0, 0);
@@ -135,8 +146,12 @@ void loop() {
   upd();
   int sensor_in = ccs.geteCO2();
   int sensor_out = ccs2.geteCO2();
-  push (sensor_in, sensor_out);
-  display.setCursor(0, 28);  
+  int sensor_in_tvoc = ccs.getTVOC();
+  int sensor_out_tcov = ccs2.getTVOC();
+
+  push (sensor_in, sensor_out, sensor_in_tvoc, sensor_out_tcov);
+  display.setCursor(0, 28);
+
 if(ccs.available()){
     if(!ccs.readData()){
       Serial.print("CO2 on S1: ");
@@ -147,10 +162,11 @@ if(ccs.available()){
     else{
       Serial.println("ERROR 1 !");
       display.print("Err1");
+      ccs.begin(0x5A);
     }
 
 
-    if(ccs2.available()){
+if(ccs2.available()){
     if(!ccs2.readData()){
       Serial.print("CO2 on S2: ");
       Serial.println(sensor_out);
@@ -161,14 +177,16 @@ if(ccs.available()){
       Serial.println("ERROR 2 !");
       display.setCursor(76, 28);
       display.print("Err2");
-    }      
+      ccs2.begin(0x5B);
+    }
   display.display();
-  delay(2000);
+  delay(500);
   display.clearDisplay();
+  delay(100);
 }
 
 
-void push (int sen_in, int sen_out)
+void push (int sen_in, int sen_out, int in_tvoc, int out_tvoc)
 {
    if (WiFi.status() == WL_CONNECTED) {
     static bool flag = false;
@@ -183,13 +201,17 @@ void push (int sen_in, int sen_out)
     asString.replace(" ", "-");
     Serial.print("Time:");
     Serial.println(asString);
-    String urlFinal = "https://script.google.com/macros/s/"+GOOGLE_SCRIPT_ID+"/exec?"+"date=" + sen_in + "&sensor=" + sen_out;
+    // String urlFinal = "https://script.google.com/macros/s/"+GOOGLE_SCRIPT_ID+"/exec?"+"sensor_1=" + sen_in + "&sensor=" + sen_out;
+    String urlFinal = "https://script.google.com/macros/s/"+GOOGLE_SCRIPT_ID+"/exec?" + "in_co2=" + sen_in + "&in_tvoc=" + in_tvoc + "&out_co2=" + sen_out + "&out_tvoc=" + out_tvoc;
     Serial.print("POST data to spreadsheet:");
     Serial.println(urlFinal);
     HTTPClient http;
     http.begin(urlFinal.c_str());
+    delay(100);
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    delay(20);
     int httpCode = http.GET(); 
+    delay(20);
     Serial.print("HTTP Status Code: ");
     Serial.println(httpCode);
     //---------------------------------------------------------------------
@@ -201,7 +223,8 @@ void push (int sen_in, int sen_out)
     }
     //---------------------------------------------------------------------
     http.end();
+    delay(20);
   }
   count++;
-  delay(1000);
+  delay(700);
 } 
